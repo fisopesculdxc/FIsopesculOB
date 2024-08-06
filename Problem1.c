@@ -2,50 +2,56 @@
 #include <stdlib.h>
 #include <pthread.h>
 
+pthread_mutex_t lock;
+pthread_cond_t cond;
+int threads_ready = 0;
+
 typedef struct node
 {
     int val;
     struct node* next;
     void (*callback_print)(struct node* my_node);
-};
+} node;
 
-struct node* create_node(int val, void (*callback_print)(struct node*))
+node* create_node(int val, void (*callback_print)(struct node*))
 {
-    struct node* new_node = (struct node*)malloc(sizeof(struct node));
+    node* new_node = (node*)malloc(sizeof(node));
     new_node->val = val;
     new_node->next = NULL;
     new_node->callback_print = callback_print;
     return new_node;
 }
 
-void add_node(struct node** head, int val, void (*callback_print)(struct node*))
+void add_node(node** head, int val, void (*callback_print)(struct node*))
 {
-    struct node* new_node = create_node(val, callback_print);
+    pthread_mutex_lock(&lock);
+    node* new_node = create_node(val, callback_print);
     if(*head == NULL)
     {
         *head = new_node;
     }
     else
     {
-        struct node* temp = *head;
+        node* temp = *head;
         while(temp->next != NULL)
         {
             temp = temp->next;
         }
         temp->next = new_node;
     }
+    pthread_mutex_unlock(&lock);
 }
 
-void print_list(struct node** head)
+void print_list(node** head)
 {
+    pthread_mutex_lock(&lock);
     if(*head == NULL)
     {
         printf("head is NULL\n");
-        return;
     }
     else
     {
-        struct node* temp = *head;
+        node* temp = *head;
         while(temp!= NULL)
         {
             if(temp->callback_print != NULL)
@@ -60,22 +66,26 @@ void print_list(struct node** head)
         }
         printf("\n");
     }
+    pthread_mutex_unlock(&lock);
 }
 
-void delete_node(struct node** head, int val)
+void delete_node(node** head, int val)
 {
+    pthread_mutex_lock(&lock);
     if(*head == NULL)
     {
         printf("head is NULL\n");
+        pthread_mutex_unlock(&lock);
         return;
     }
 
-    struct node* temp = *head;
+    node* temp = *head;
 
     if(temp != NULL && temp->val == val)
     {
         *head = temp->next;
         free(temp);
+        pthread_mutex_unlock(&lock);
         return;
     }
 
@@ -86,20 +96,23 @@ void delete_node(struct node** head, int val)
     
     if(temp->next == NULL)
     {
+        pthread_mutex_unlock(&lock);
         return;
     }
     else
     {
-        struct node* next_temp = temp->next->next;
+        node* next_temp = temp->next->next;
         free(temp->next);
         temp->next = next_temp;
     }
+    pthread_mutex_unlock(&lock);
 }
 
-void flush_list(struct node** head)
+void flush_list(node** head)
 {
-    struct node* temp = *head;
-    struct node* next_node;
+    pthread_mutex_lock(&lock);
+    node* temp = *head;
+    node* next_node;
     while(temp != NULL)
     {
         next_node = temp->next;
@@ -107,26 +120,28 @@ void flush_list(struct node** head)
         temp = next_node;
     }
     *head = NULL;
+    pthread_mutex_unlock(&lock);
 }
 
-void swap(struct node* node1, struct node* node2)
+void swap(node* node1, node* node2)
 {
     int temp = node1->val;
     node1->val = node2->val;
     node2->val = temp;
-
 }
 
-void sort_list(struct node** head)
+void sort_list(node** head)
 {
+    pthread_mutex_lock(&lock);
     if(*head == NULL || (*head)->next == NULL)
     {
         printf("0 or 1 element\n");
+        pthread_mutex_unlock(&lock);
         return;
     }
 
-    struct node* temp = *head;
-    struct node* temp2;
+    node* temp = *head;
+    node* temp2;
 
     while(temp != NULL && temp->next != NULL)
     {
@@ -141,16 +156,13 @@ void sort_list(struct node** head)
         }
         temp = temp->next;
     }
+    pthread_mutex_unlock(&lock);
 }
 
-void print_node(struct node* my_node)
+void print_node(node* my_node)
 {
     printf("%d ", my_node->val);
 }
-
-pthread_mutex_t lock;
-pthread_cond_t cond;
-int threads_ready = 0;
 
 void wait_for_all_threads()
 {
@@ -169,9 +181,8 @@ void wait_for_all_threads()
 
 void* thread_func1(void* arg)
 {
-    struct node** head = (struct node**)arg;
+    node** head = (node**)arg;
     wait_for_all_threads();
-    pthread_mutex_lock(&lock);
     printf("Thread %lu: add(2)\n", pthread_self());
     add_node(head, 2, print_node);
     printf("Thread %lu: add(4)\n", pthread_self());
@@ -186,15 +197,13 @@ void* thread_func1(void* arg)
     delete_node(head, 10);
     printf("Thread %lu: delete(5)\n", pthread_self());
     delete_node(head, 5);
-    pthread_mutex_unlock(&lock);
     return NULL;
 }
 
 void* thread_func2(void* arg)
 {
-    struct node** head = (struct node**)arg;
+    node** head = (node**)arg;
     wait_for_all_threads();
-    pthread_mutex_lock(&lock);
     printf("Thread %lu: add(11)\n", pthread_self());
     add_node(head, 11, print_node);
     printf("Thread %lu: add(1)\n", pthread_self());
@@ -205,15 +214,13 @@ void* thread_func2(void* arg)
     add_node(head, 8, print_node);
     printf("Thread %lu: print_list()\n", pthread_self());
     print_list(head);
-    pthread_mutex_unlock(&lock);
     return NULL;
 }
 
 void* thread_func3(void* arg)
 {
-    struct node** head = (struct node**)arg;
+    node** head = (node**)arg;
     wait_for_all_threads();
-    pthread_mutex_lock(&lock);
     printf("Thread %lu: add(30)\n", pthread_self());
     add_node(head, 30, print_node);
     printf("Thread %lu: add(25)\n", pthread_self());
@@ -226,13 +233,12 @@ void* thread_func3(void* arg)
     print_list(head);
     printf("Thread %lu: delete(100)\n", pthread_self());
     delete_node(head, 100);
-    pthread_mutex_unlock(&lock);
     return NULL;
 }
 
 int main()
 {
-    struct node* head = NULL;
+    node* head = NULL;
 
     pthread_t thread1, thread2, thread3;
     pthread_mutex_init(&lock, NULL);
